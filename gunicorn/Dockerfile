@@ -78,14 +78,16 @@ FROM ubuntu:22.04@sha256:c9cf959fd83770dfdefd8fb42cfef0761432af36a764c077aed54bb
 
 RUN apt-get update \
   && apt-get install --no-install-recommends -y python3 python3-pip python3-packaging tini nano \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* \
+  && adduser --disabled-password --gecos '' appuser \
+  && mkdir /artifacts && chown appuser:appuser /artifacts \
+  && mkdir -p /opt/app/bin && chown appuser:appuser /opt/app/bin
 
 COPY ./gunicorn/requirements.txt /tmp/requirements.txt
+COPY --chown=appuser ./gunicorn/start.sh /usr/local/lib/python3.10/dist-packages/wsi_service
 
-RUN adduser --disabled-password --gecos '' appuser \
-  && mkdir /artifacts && chown appuser:appuser /artifacts \
-  && mkdir -p /opt/app/bin && chown appuser:appuser /opt/app/bin \
-  && pip3 install -r /tmp/requirements.txt
+RUN pip3 install -r /tmp/requirements.txt \
+  && chmod u+x /usr/local/lib/python3.10/dist-packages/wsi_service/start.sh
 USER appuser
 
 COPY --chown=appuser --from=wsi_service_build /openslide_deps/* /usr/lib/x86_64-linux-gnu/
@@ -98,7 +100,6 @@ EXPOSE 8080/tcp
 WORKDIR /usr/local/lib/python3.10/dist-packages/wsi_service
 RUN mkdir -p modules
 COPY --chown=appuser ./gunicorn/gunicorn_conf.py .
-COPY --chmod=700 --chown=appuser ./gunicorn/start.sh /usr/local/lib/python3.10/dist-packages/wsi_service
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ./start.sh
