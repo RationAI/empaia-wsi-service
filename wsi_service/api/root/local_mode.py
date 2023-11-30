@@ -4,10 +4,12 @@ from fastapi.responses import JSONResponse
 
 from wsi_service.custom_models.local_mapper_models import CaseLocalMapper, SlideLocalMapper, SlideStorage
 from wsi_service.local_mapper import LocalMapper
+from wsi_service.local_mapper_paths import PathsLocalMapper
 
 
 def add_routes_local_mode(app, settings):
-    localmapper = LocalMapper(settings.data_dir)
+    mapper = LocalMapper if settings.local_mode_uid else PathsLocalMapper
+    localmapper = mapper(settings.data_dir)
 
     @app.get("/cases/", response_model=List[CaseLocalMapper], tags=["Additional Routes (Standalone WSI Service)"])
     async def _():

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     data_dir: str = "/data"
     mapper_address: str = "http://localhost:8080/slides/{slide_id}/storage"
     local_mode: bool = True
+    local_mode_uid: bool = False
     enable_viewer_routes: bool = True
     inactive_histo_image_timeout_seconds: int = 600
     image_handle_cache_size: int = 50
