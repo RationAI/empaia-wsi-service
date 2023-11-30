@@ -83,6 +83,11 @@ RUN apt-get update \
   && mkdir /artifacts && chown appuser:appuser /artifacts \
   && mkdir -p /opt/app/bin && chown appuser:appuser /opt/app/bin
 
+COPY --chown=appuser --from=wsi_service_build /openslide_deps/* /usr/lib/x86_64-linux-gnu/
+
+COPY --chown=appuser --from=wsi_service_intermediate /usr/local/lib/python3.10/dist-packages/ /usr/local/lib/python3.10/dist-packages/
+COPY --chown=appuser --from=wsi_service_intermediate /data /data
+
 COPY ./gunicorn/requirements.txt /tmp/requirements.txt
 COPY --chown=appuser ./gunicorn/start.sh /usr/local/lib/python3.10/dist-packages/wsi_service
 
@@ -90,10 +95,7 @@ RUN pip3 install -r /tmp/requirements.txt \
   && chmod u+x /usr/local/lib/python3.10/dist-packages/wsi_service/start.sh
 USER appuser
 
-COPY --chown=appuser --from=wsi_service_build /openslide_deps/* /usr/lib/x86_64-linux-gnu/
 
-COPY --chown=appuser --from=wsi_service_intermediate /usr/local/lib/python3.10/dist-packages/ /usr/local/lib/python3.10/dist-packages/
-COPY --chown=appuser --from=wsi_service_intermediate /data /data
 
 EXPOSE 8080/tcp
 
