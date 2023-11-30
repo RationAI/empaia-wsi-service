@@ -98,7 +98,7 @@ EXPOSE 8080/tcp
 WORKDIR /usr/local/lib/python3.10/dist-packages/wsi_service
 RUN mkdir -p modules
 COPY --chown=appuser ./gunicorn/gunicorn_conf.py .
-COPY --chown=appuser ./gunicorn/start.sh /usr/local/lib/python3.10/dist-packages/wsi_service
+COPY --chmod=700 --chown=appuser ./gunicorn/start.sh /usr/local/lib/python3.10/dist-packages/wsi_service
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ./start.sh
