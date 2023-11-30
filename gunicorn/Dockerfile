@@ -18,7 +18,7 @@ RUN cp /usr/lib/x86_64-linux-gnu/libopenslide.so.0 /openslide_deps
 RUN ldd /usr/lib/x86_64-linux-gnu/libopenslide.so.0 \
   | grep "=> /" | awk '{print $3}' | xargs -I '{}' cp -v '{}' /openslide_deps
 
-COPY /wsi-service /wsi-service
+COPY . /wsi-service
 
 WORKDIR /wsi-service
 RUN poetry build && poetry export -f requirements.txt > requirements.txt
@@ -80,7 +80,7 @@ RUN apt-get update \
   && apt-get install --no-install-recommends -y python3 python3-pip python3-packaging tini nano \
   && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /tmp/requirements.txt
+COPY ./gunicorn/requirements.txt /tmp/requirements.txt
 
 RUN adduser --disabled-password --gecos '' appuser \
   && mkdir /artifacts && chown appuser:appuser /artifacts \
@@ -97,8 +97,8 @@ EXPOSE 8080/tcp
 
 WORKDIR /usr/local/lib/python3.10/dist-packages/wsi_service
 RUN mkdir -p modules
-COPY --chown=appuser gunicorn_conf.py .
-COPY --chown=appuser start.sh /usr/local/lib/python3.10/dist-packages/wsi_service
+COPY --chown=appuser ./gunicorn/gunicorn_conf.py .
+COPY --chown=appuser ./gunicorn/start.sh /usr/local/lib/python3.10/dist-packages/wsi_service
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ./start.sh
