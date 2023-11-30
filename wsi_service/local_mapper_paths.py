@@ -1,5 +1,4 @@
 import os
-import debugpy
 
 from fastapi import HTTPException
 
@@ -7,7 +6,6 @@ from fastapi import HTTPException
 from wsi_service.custom_models.local_mapper_models import SlideLocalMapper
 from wsi_service.models.v3.storage import SlideStorage, StorageAddress
 from wsi_service.plugins import is_supported_format
-
 
 class PathsLocalMapper:
     def __init__(self, data_dir):
