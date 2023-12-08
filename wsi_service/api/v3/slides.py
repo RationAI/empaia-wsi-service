@@ -1,3 +1,4 @@
+import asyncio
 from typing import List
 
 from fastapi import Path
@@ -12,6 +13,10 @@ from wsi_service.custom_models.queries import (
     ImageQualityQuery,
     PluginQuery,
     ZStackQuery,
+    FileListQuery,
+    TileLevelListQuery,
+    TileXListQuery,
+    TileYListQuery,
 )
 from wsi_service.custom_models.responses import ImageRegionResponse, ImageResponses
 from wsi_service.models.v3.slide import SlideInfo
@@ -23,6 +28,12 @@ from wsi_service.utils.app_utils import (
     validate_image_request,
     validate_image_size,
     validate_image_z,
+    batch_safe_make_response,
+    batch_safe_get_region,
+    batch_safe_get_tile,
+    safe_get_slide,
+    safe_get_slide_for_query,
+    safe_get_slide_info,
 )
 from wsi_service.utils.download_utils import expand_folders, get_zipfly_paths, remove_folders
 from wsi_service.utils.image_utils import (
@@ -293,3 +304,227 @@ def add_routes_slides(app, settings, slide_manager):
                 "Content-Disposition": f"attachment;filename={slide_id}.zip",
             },
         )
+
+    ##
+    # NEW API ALLOWING BATCH ACCESS
+    ##
+    @app.get("/files/info", response_model=List[SlideInfo], tags=["Main Routes"])
+    async def _(paths: str = FileListQuery, plugin: str = PluginQuery):
+        """
+        Get metadata information for a slide set (see description above sister function)
+        """
+        requests = map(lambda path: slide_manager.get_slide_info(path.replace('/', '>'),
+                                                                 slide_info_model=SlideInfo, plugin=plugin),
+                       paths.split(","))
+        slide_list = await asyncio.gather(*requests)
+        return slide_list
+
+    @app.get(
+        "/files/thumbnail/max_size/{max_x}/{max_y}",
+        responses=ImageResponses,
+        response_class=StreamingResponse,
+        tags=["Main Routes"],
+    )
+    async def _(
+            paths: str = FileListQuery,
+            max_x: int = Path(example=100, ge=1, le=settings.max_thumbnail_size,
+                              description="Maximum width of thumbnail"),
+            max_y: int = Path(example=100, ge=1, le=settings.max_thumbnail_size,
+                              description="Maximum height of thumbnail"),
+            image_format: str = ImageFormatsQuery,
+            image_quality: int = ImageQualityQuery,
+            plugin: str = PluginQuery,
+    ):
+        """
+        Get slide SET thumbnails image  given its ID. (see description above sister function)
+        """
+        validate_image_request(image_format, image_quality)
+        requests = map(lambda path: safe_get_slide(slide_manager, path.replace('/', '>'), plugin=plugin),
+                       paths.split(","))
+        slides = await asyncio.gather(*requests)
+
+        requests = map(lambda slide: slide.get_thumbnail(max_x, max_y),  slides)
+        thumbnails = await asyncio.gather(*requests)
+        return batch_safe_make_response(slides, thumbnails, image_format, image_quality)
+
+    @app.get(
+        "/files/label/max_size/{max_x}/{max_y}",
+        responses=ImageResponses,
+        response_class=StreamingResponse,
+        tags=["Main Routes"],
+    )
+    async def _(
+            paths: str = FileListQuery,
+            max_x: int = Path(example=100, description="Maximum width of label image"),
+            max_y: int = Path(example=100, description="Maximum height of label image"),
+            image_format: str = ImageFormatsQuery,
+            image_quality: int = ImageQualityQuery,
+            plugin: str = PluginQuery,
+    ):
+        """
+        Get the label image of a slide set given path(s). (see description above sister function)
+        """
+        validate_image_request(image_format, image_quality)
+        requests = map(lambda path: safe_get_slide(slide_manager, path.replace('/', '>'), plugin=plugin),
+                       paths.split(","))
+        slides = await asyncio.gather(*requests)
+
+        requests = map(lambda slide: slide.get_label(), slides)
+        labels = await asyncio.gather(*requests)
+        map(lambda l: l.thumbnail((max_x, max_y), Image.ANTIALIAS), labels)
+        return batch_safe_make_response(
+            slides,
+            labels,
+            image_format,
+            image_quality
+        )
+
+    @app.get(
+        "/files/macro/max_size/{max_x}/{max_y}",
+        responses=ImageResponses,
+        response_class=StreamingResponse,
+        tags=["Main Routes"],
+    )
+    async def _(
+            paths: str = FileListQuery,
+            max_x: int = Path(example=100, description="Maximum width of macro image"),
+            max_y: int = Path(example=100, description="Maximum height of macro image"),
+            image_format: str = ImageFormatsQuery,
+            image_quality: int = ImageQualityQuery,
+            plugin: str = PluginQuery,
+    ):
+        """
+        Get the macro image of a slide set given path(s). (see description above sister function)
+        """
+        validate_image_request(image_format, image_quality)
+        requests = map(lambda path: safe_get_slide(slide_manager, path.replace('/', '>'), plugin=plugin),
+                       paths.split(","))
+        slides = await asyncio.gather(*requests)
+
+        requests = map(lambda slide: slide.get_macro(), slides)
+        macros = await asyncio.gather(*requests)
+        map(lambda m: m.thumbnail((max_x, max_y), Image.ANTIALIAS), macros)
+        return batch_safe_make_response(
+            slides,
+            macros,
+            image_format,
+            image_quality
+        )
+
+    # ## Regions not supported, probably not necessary in large load apps
+    # @app.get(
+    #     "/files/region/level/{level}/start/{start_x}/{start_y}/size/{size_x}/{size_y}",
+    #     responses=ImageRegionResponse,
+    #     response_class=StreamingResponse,
+    #     tags=["Main Routes"],
+    # )
+    # async def _(
+    #         paths: str = FileListQuery,
+    #         level: int = Path(ge=0, example=0, description="Pyramid level of region"),
+    #         start_x: int = Path(example=0, description="x component of start coordinate of requested region"),
+    #         start_y: int = Path(example=0, description="y component of start coordinate of requested region"),
+    #         size_x: int = Path(gt=0, example=1024, description="Width of requested region"),
+    #         size_y: int = Path(gt=0, example=1024, description="Height of requested region"),
+    #         image_channels: List[int] = ImageChannelQuery,
+    #         z: int = ZStackQuery,
+    #         padding_color: str = ImagePaddingColorQuery,
+    #         image_format: str = ImageFormatsQuery,
+    #         image_quality: int = ImageQualityQuery,
+    #         plugin: str = PluginQuery,
+    # ):
+    #     """
+    #     Get a region of a slide SET given path(s) (see description in the above sister implementation)
+    #     """
+    #     vp_color = validate_hex_color_string(padding_color)
+    #     validate_image_request(image_format, image_quality)
+    #     validate_image_size(size_x, size_y)
+    #
+    #     requests = map(lambda path: safe_get_slide(slide_manager, path.replace('/', '>'), plugin=plugin),
+    #                    paths.split(","))
+    #     slides = await asyncio.gather(*requests)
+    #     requests = map(safe_get_slide_info, slides)
+    #     slide_infos = await asyncio.gather(*requests)
+    #     requests = map(lambda i: batch_safe_get_region(slides[i], slide_infos[i],
+    #                                                        level, start_x, start_y, size_x, size_y,
+    #                                                        image_channels, vp_color, z),
+    #                    range(slides.__len__()))
+    #     regions = await asyncio.gather(*requests)
+    #     return batch_safe_make_response(slides, regions, image_format, image_quality, image_channels)
+
+    @app.get(
+        "/files/tile/level/{level}/tile/{tile_x}/{tile_y}",
+        responses=ImageResponses,
+        response_class=StreamingResponse,
+        tags=["Main Routes"],
+    )
+    async def _(
+            paths: str = FileListQuery,
+            level: int = Path(ge=0, example=0, description="Pyramid level of region"),
+            tile_x: int = Path(example=0, description="Request the tile_x-th tile in x dimension"),
+            tile_y: int = Path(example=0, description="Request the tile_y-th tile in y dimension"),
+            image_channels: List[int] = ImageChannelQuery,
+            z: int = ZStackQuery,
+            padding_color: str = ImagePaddingColorQuery,
+            image_format: str = ImageFormatsQuery,
+            image_quality: int = ImageQualityQuery,
+            plugin: str = PluginQuery,
+    ):
+        """
+        Get a tile of a slide given its path (see description above sister function)
+        """
+        vp_color = validate_hex_color_string(padding_color)
+        validate_image_request(image_format, image_quality)
+
+        requests = map(lambda path: safe_get_slide(slide_manager, path.replace('/', '>'), plugin=plugin),
+                       paths.split(","))
+        slides = await asyncio.gather(*requests)
+        requests = map(safe_get_slide_info, slides)
+        slide_infos = await asyncio.gather(*requests)
+        requests = map(lambda i: batch_safe_get_tile(slides[i], slide_infos[i],
+                                                         level, tile_x, tile_y,
+                                                         image_channels, vp_color, z),
+                       range(slides.__len__()))
+        regions = await asyncio.gather(*requests)
+        return batch_safe_make_response(slides, regions, image_format, image_quality, image_channels)
+    
+    # To allow for diverse regions etc..
+    @app.get(
+        "/files/batch/",
+        responses=ImageResponses,
+        response_class=StreamingResponse,
+        tags=["Main Routes"],
+    )
+    async def _(
+            paths: str = FileListQuery,
+            levels: str = TileLevelListQuery,
+            xs: str = TileXListQuery,
+            ys: str = TileYListQuery,
+            image_channels: List[int] = ImageChannelQuery,
+            z: int = ZStackQuery,  # TODO also?
+            padding_color: str = ImagePaddingColorQuery,
+            image_format: str = ImageFormatsQuery,
+            image_quality: int = ImageQualityQuery,
+            plugin: str = PluginQuery,
+    ):
+        """
+        Get a tile of a slide given its path (see description above sister function)
+        """
+        vp_color = validate_hex_color_string(padding_color)
+        validate_image_request(image_format, image_quality)
+        requests = map(lambda path: safe_get_slide(slide_manager, path.replace('/', '>'), plugin=plugin),
+                       paths.split(","))
+        slides = await asyncio.gather(*requests)
+
+        requests = map(safe_get_slide_info, slides)
+        slide_infos = await asyncio.gather(*requests)
+
+        xs = [int(x) for x in xs.split(',')]
+        ys = [int(x) for x in ys.split(',')]
+        levels = [int(x) for x in levels.split(',')]
+        requests = map(lambda i: batch_safe_get_tile(slides[i], slide_infos[i],
+                                                     levels[i], xs[i], ys[i],
+                                                     image_channels, vp_color, z),
+                       range(slides.__len__()))
+
+        regions = await asyncio.gather(*requests)
+        return batch_safe_make_response(slides, regions, image_format, image_quality, image_channels)
